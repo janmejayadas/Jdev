@@ -1,0 +1,158 @@
+#!/bin/sh
+
+# Author : Janmejaya
+#Full DB backup with migration and Validation script 
+
+#--------------------------#
+#Source Database Information
+source_db_host="cccc"
+source_db_port="ccc"
+source_db_user="cccc"
+source_db_pwd="cccc"
+source_db_dbName=cccccc
+#-----------------------#
+#Distination Database Information
+dist_db_host="ccc"
+dist_db_port="ccc"
+dist_db_user="ccc"
+dist_db_pwd="ccc"
+dist_db_dbName="ccc"
+#--------------------------#
+
+#usedb="payment";    
+read -sp "Please Enter Database Name: " dbname
+echo
+echo
+echo " You have enter databaseName as: $dbname"
+source_dbs=$(mysql -h "$source_db_host" -u "$source_db_user"  -p"$source_db_pwd" --skip-column-names  -e "show databases" 2>/dev/null)
+dist_dbs=$(mysql -h "$dist_db_host" -u "$dist_db_user"  -p"$dist_db_pwd" --skip-column-names  -e "show databases" 2>/dev/null)
+
+#Hold If validation not Sucess
+field=()
+
+#echo "SourceDBName==== $source_dbs"
+for i in $(echo $source_dbs  |tr -d '\r')
+do
+if [ "$i" == $dbname ];
+then echo "database identify." 
+echo 
+echo "[Find Specified Schema..]"
+echo
+echo
+#FullBackup
+echo "[Starting to backup..]"
+
+start_bakup=$(date +%s%N)
+
+makeItDump=$(mysqldump -h "$source_db_host" -u "$source_db_user"  -p"$source_db_pwd" payment  --single-transaction --skip-add-locks  --skip-disable-keys 2>/dev/null > \backup2.sql)
+
+end_bakup=$(date +%s%N)
+total_bakup=$(((end_bakup - start_bakup)/1000000))
+echo "Total time taken  for backup:: $total_bakup ms"
+echo "[Backup Sucess..]"
+echo
+
+#FullImport
+echo "[Starting Import..]"
+start_import=$(date +%s%N)
+
+
+mysql -h"$dist_db_host" -u"$dist_db_user" -p"$dist_db_pwd" "$dist_db_dbName" 2>/dev/null < \backup2.sql
+
+end_import=$(date +%s%N)
+
+total_import=$(((end_import - start_import)/1000000))
+
+echo "Total time taken  for Import:: $total_import ms"
+echo "[Import Sucess..]"
+echo
+
+fi
+done
+
+#Valdation
+echo "[Valdition started..]"
+
+read -sp "Please Enter Database Name: " validate
+echo
+echo
+start_valid=$(date +%s%N)
+echo " You have enter databaseName as: $validate"
+echo
+for d_dbName in $(echo $dist_dbs |tr -d '\r')
+do
+#echo "BeforeVaidate D== $d_dbName"
+if [ "$d_dbName" == $validate ]
+then
+
+S_listOfTables=$(mysql -h"$source_db_host" -u"$source_db_user" -p"$source_db_pwd" --skip-column-names --database="$source_db_dbName" -e"show tables" 2>/dev/null)
+
+#echo "$S_ListOfTables"
+D_listOfTables=$(mysql -h"remotemysql.com" -u"gdryy9UmGV" -p"a5phXivPvd" --skip-column-names --database="gdryy9UmGV" -e"show tables" 2>/dev/null)
+
+for s_verify in $(echo $S_listOfTables  |tr -d '\r')
+do
+for d_verify in $(echo $D_listOfTables |tr -d '\r')
+do
+if [ "$s_verify" == $d_verify ]
+then
+#echo "S:$s_verify"
+#echo "D:$d_verify"
+
+S_checkSum=$(mysql -h"$source_db_host" -u"$source_db_user" -p"$source_db_pwd" --skip-column-names  -e"checksum table $source_db_dbName.$s_verify" 2>/dev/null)
+D_checkSum=$(mysql -h"$dist_db_host" -u"$dist_db_user" -p"$dist_db_pwd" --skip-column-names -e"checksum table $dist_db_dbName.$d_verify" 2>/dev/null)
+for s_cs_verify in $(echo $S_checkSum  |tr -d '\r')
+do
+for d_cs_verify in $(echo $D_checkSum |tr -d '\r')
+do
+
+#echo "$s_cs_verify == $d_cs_verify"
+ if [[ ! -n ${s_cs_verify//[0-9]/} ]] && [[ ! -n ${d_cs_verify//[0-9]/} ]]
+ #&& [ $ds_cs_verify = *[[:digit:]]* ] ]
+then
+if [ "$s_cs_verify" != $d_cs_verify ]
+then 
+echo "S:$s_verify"
+echo "D:$d_verify"
+echo
+echo "CheckSum NotMatch !!!!!!"
+echo "$s_cs_verify == $d_cs_verify"
+
+#echo "$s_cs_verify == $d_cs_verify"
+else continue;
+fi
+
+#echo "true"
+else 
+#field+=("false")
+
+continue;
+fi
+done
+done
+elif  [ "$s_verify" == "" ] && [ "$d_verify" == "" ]
+then
+    echo "trying to close "
+    exit 0
+else continue;
+fi
+#echo "complete"
+#echo "--------------"
+
+#break;
+done
+done
+
+end_valid=$(date +%s%N)
+
+
+total_valid=$(((end_valid - start_valid)/1000000))
+echo "Total time taken  for checksum validation:: $total_valid ms"
+
+echo "CheckSum Verify completed....."
+#echo "Validation faild count: ${field[*]}"
+break
+else 
+echo "Validate not done......"
+fi
+done
